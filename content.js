@@ -1,310 +1,163 @@
-// ChatGPT Please Extension - Content Script
-// Automatically appends "please" to the end of every prompt
+// ChatGPT Please Extension - Final Version
+console.log('ChatGPT Please: Final version loaded');
 
-(function() {
-    'use strict';
-    
-    // Configuration
-    const APPEND_TEXT = ' please';
-    const DEBOUNCE_DELAY = 100; // ms
-    
-    // Track if we've already processed a message to avoid infinite loops
-    let processedMessages = new Set();
-    
-    // Debug logging
-    function debugLog(message, data = null) {
-        console.log('[ChatGPT Please]', message, data || '');
-    }
-    
-    // Function to append "please" to text if not already present
-    function appendPlease(text) {
-        if (!text || typeof text !== 'string') return text;
-        
-        const trimmedText = text.trim();
-        if (trimmedText.toLowerCase().endsWith('please')) {
-            return text; // Already ends with "please"
+// Function to add please
+function addPlease(text) {
+    if (!text || text.trim() === '') return 'please';
+    if (text.toLowerCase().endsWith('please')) return text;
+    return text + ' please';
+}
+
+// Find the input field
+function findInput() {
+    const inputs = document.querySelectorAll('textarea, div[contenteditable="true"]');
+    for (let input of inputs) {
+        const style = window.getComputedStyle(input);
+        if (style.display !== 'none' && style.visibility !== 'hidden') {
+            return input;
         }
-        
-        return text + APPEND_TEXT;
     }
+    return null;
+}
+
+// Modify the input field
+function modifyInput() {
+    const input = findInput();
+    if (!input) return;
     
-    // Function to find and modify textarea/input elements
-    function modifyInputElements() {
-        debugLog('Searching for input elements...');
-        
-        // More comprehensive selectors for ChatGPT
-        const selectors = [
-            // Textarea selectors
-            'textarea[placeholder*="Message"]',
-            'textarea[placeholder*="message"]',
-            'textarea[data-id*="root"]',
-            'textarea[aria-label*="message"]',
-            'textarea[aria-label*="Message"]',
-            'textarea[role="textbox"]',
-            'textarea[data-testid*="textbox"]',
-            'textarea[data-testid*="input"]',
-            'textarea',
-            
-            // Contenteditable selectors
-            'div[contenteditable="true"][data-id*="root"]',
-            'div[contenteditable="true"][role="textbox"]',
-            'div[contenteditable="true"][aria-label*="message"]',
-            'div[contenteditable="true"][data-testid*="textbox"]',
-            'div[contenteditable="true"]',
-            
-            // Generic input selectors
-            'input[type="text"]',
-            'input[placeholder*="message"]',
-            'input[placeholder*="Message"]'
-        ];
-        
-        let foundElements = 0;
-        
-        selectors.forEach(selector => {
-            const elements = document.querySelectorAll(selector);
-            debugLog(`Selector "${selector}" found ${elements.length} elements`);
-            
-            elements.forEach(element => {
-                if (element.dataset.pleaseProcessed) return; // Skip already processed elements
-                
-                // Mark as processed
-                element.dataset.pleaseProcessed = 'true';
-                foundElements++;
-                
-                debugLog('Processing element:', element);
-                
-                // For textarea elements
-                if (element.tagName === 'TEXTAREA') {
-                    const originalValue = element.value;
-                    debugLog('Textarea value:', originalValue);
-                    
-                    if (originalValue && originalValue.trim() && !originalValue.toLowerCase().endsWith('please')) {
-                        const newValue = appendPlease(originalValue);
-                        element.value = newValue;
-                        debugLog('Updated textarea value:', newValue);
-                        
-                        // Trigger multiple events to ensure the app notices
-                        element.dispatchEvent(new Event('input', { bubbles: true }));
-                        element.dispatchEvent(new Event('change', { bubbles: true }));
-                        element.dispatchEvent(new Event('keyup', { bubbles: true }));
-                        
-                        // Force focus back to the element
-                        element.focus();
-                    }
-                }
-                
-                // For contenteditable divs
-                if (element.contentEditable === 'true') {
-                    const textContent = element.textContent || element.innerText;
-                    debugLog('Contenteditable text:', textContent);
-                    
-                    if (textContent && textContent.trim() && !textContent.toLowerCase().endsWith('please')) {
-                        const newText = appendPlease(textContent);
-                        element.textContent = newText;
-                        debugLog('Updated contenteditable text:', newText);
-                        
-                        // Trigger multiple events to ensure the app notices
-                        element.dispatchEvent(new Event('input', { bubbles: true }));
-                        element.dispatchEvent(new Event('change', { bubbles: true }));
-                        element.dispatchEvent(new Event('keyup', { bubbles: true }));
-                        
-                        // Force focus back to the element
-                        element.focus();
-                    }
-                }
-                
-                // For input elements
-                if (element.tagName === 'INPUT') {
-                    const originalValue = element.value;
-                    debugLog('Input value:', originalValue);
-                    
-                    if (originalValue && originalValue.trim() && !originalValue.toLowerCase().endsWith('please')) {
-                        const newValue = appendPlease(originalValue);
-                        element.value = newValue;
-                        debugLog('Updated input value:', newValue);
-                        
-                        // Trigger input event
-                        element.dispatchEvent(new Event('input', { bubbles: true }));
-                        element.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }
-            });
-        });
-        
-        debugLog(`Total elements processed: ${foundElements}`);
-    }
+    let currentText = '';
+    let newText = '';
     
-    // Function to intercept form submissions and modify the data
-    function interceptSubmissions() {
-        // Listen for form submissions
-        document.addEventListener('submit', function(event) {
-            const form = event.target;
-            if (!form) return;
-            
-            // Find textarea or contenteditable elements in the form
-            const textInputs = form.querySelectorAll('textarea, div[contenteditable="true"]');
-            
-            textInputs.forEach(input => {
-                if (input.tagName === 'TEXTAREA') {
-                    const currentValue = input.value;
-                    if (currentValue && !currentValue.toLowerCase().endsWith('please')) {
-                        input.value = appendPlease(currentValue);
-                    }
-                } else if (input.contentEditable === 'true') {
-                    const currentText = input.textContent || input.innerText;
-                    if (currentText && !currentText.toLowerCase().endsWith('please')) {
-                        input.textContent = appendPlease(currentText);
-                    }
-                }
-            });
-        }, true);
-    }
-    
-    // Function to monitor for new messages being sent
-    function monitorMessageSending() {
-        // Look for send buttons and intercept their clicks
-        const sendButtonSelectors = [
-            'button[data-testid*="send"]',
-            'button[aria-label*="Send"]',
-            'button[title*="Send"]',
-            'button:has(svg[data-icon*="send"])',
-            'button:has(svg[data-icon*="arrow"])'
-        ];
-        
-        sendButtonSelectors.forEach(selector => {
-            const buttons = document.querySelectorAll(selector);
-            buttons.forEach(button => {
-                if (button.dataset.pleaseProcessed) return;
-                button.dataset.pleaseProcessed = 'true';
-                
-                button.addEventListener('click', function(event) {
-                    // Small delay to allow the form to be populated
-                    setTimeout(() => {
-                        modifyInputElements();
-                    }, 50);
-                }, true);
-            });
-        });
-    }
-    
-    // Function to observe DOM changes for dynamically added elements
-    function observeDOMChanges() {
-        const observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                if (mutation.type === 'childList') {
-                    // Reset processed flags for new elements
-                    const newElements = document.querySelectorAll('textarea, div[contenteditable="true"], button');
-                    newElements.forEach(element => {
-                        if (!element.dataset.pleaseProcessed) {
-                            delete element.dataset.pleaseProcessed;
-                        }
-                    });
-                    
-                    // Re-run our functions for new elements
-                    setTimeout(() => {
-                        modifyInputElements();
-                        monitorMessageSending();
-                    }, 100);
-                }
-            });
-        });
-        
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    }
-    
-    // Function to handle keyboard shortcuts (Enter key)
-    function handleKeyboardShortcuts() {
-        document.addEventListener('keydown', function(event) {
-            // Check for Enter key (but not Shift+Enter for new lines)
-            if (event.key === 'Enter' && !event.shiftKey) {
-                debugLog('Enter key pressed, checking for active element...');
-                
-                // Find the active element
-                const activeElement = document.activeElement;
-                debugLog('Active element:', activeElement);
-                
-                if (activeElement && (
-                    activeElement.tagName === 'TEXTAREA' || 
-                    activeElement.contentEditable === 'true'
-                )) {
-                    debugLog('Active element is input field, processing...');
-                    // Small delay to allow the text to be processed
-                    setTimeout(() => {
-                        modifyInputElements();
-                    }, 10);
-                }
-            }
-        }, true);
-    }
-    
-    // More aggressive approach - intercept all input events
-    function interceptAllInputEvents() {
-        debugLog('Setting up input event interception...');
-        
-        // Listen for all input events
-        document.addEventListener('input', function(event) {
-            const target = event.target;
-            debugLog('Input event detected on:', target);
-            
-            if (target && (target.tagName === 'TEXTAREA' || target.contentEditable === 'true' || target.tagName === 'INPUT')) {
-                debugLog('Input event on input field, processing...');
-                setTimeout(() => {
-                    modifyInputElements();
-                }, 50);
-            }
-        }, true);
-        
-        // Listen for all keyup events
-        document.addEventListener('keyup', function(event) {
-            const target = event.target;
-            if (target && (target.tagName === 'TEXTAREA' || target.contentEditable === 'true' || target.tagName === 'INPUT')) {
-                debugLog('Keyup event on input field, processing...');
-                setTimeout(() => {
-                    modifyInputElements();
-                }, 50);
-            }
-        }, true);
-    }
-    
-    // Initialize the extension
-    function init() {
-        debugLog('ChatGPT Please extension loaded');
-        debugLog('Current URL:', window.location.href);
-        debugLog('Document ready state:', document.readyState);
-        
-        // Wait for the page to be fully loaded
-        if (document.readyState === 'loading') {
-            debugLog('Document still loading, waiting...');
-            document.addEventListener('DOMContentLoaded', function() {
-                setTimeout(init, 100);
-            });
-            return;
+    if (input.tagName === 'TEXTAREA') {
+        currentText = input.value;
+        newText = addPlease(currentText);
+        if (newText !== currentText) {
+            console.log('ChatGPT Please: Modifying textarea:', currentText, '->', newText);
+            input.value = newText;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
         }
+    } else if (input.contentEditable === 'true') {
+        currentText = input.innerText || input.textContent;
+        newText = addPlease(currentText);
+        if (newText !== currentText) {
+            console.log('ChatGPT Please: Modifying contenteditable:', currentText, '->', newText);
+            input.innerText = newText;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+}
+
+// Listen for Enter key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        console.log('ChatGPT Please: Enter pressed');
+        modifyInput(); // Do it immediately
+        // Also try to catch the request after a delay
+        setTimeout(() => {
+            console.log('ChatGPT Please: Checking for network requests after Enter...');
+        }, 100);
+    }
+}, true);
+
+// Listen for send button clicks
+document.addEventListener('click', function(e) {
+    const button = e.target.closest('button');
+    if (button && (button.textContent.toLowerCase().includes('send') || 
+                   button.getAttribute('aria-label')?.toLowerCase().includes('send'))) {
+        console.log('ChatGPT Please: Send button clicked');
+        modifyInput(); // Do it immediately
+        // Also try to catch the request after a delay
+        setTimeout(() => {
+            console.log('ChatGPT Please: Checking for network requests after Send...');
+        }, 100);
+    }
+}, true);
+
+// Intercept ALL network requests to find the right one
+const originalFetch = window.fetch;
+window.fetch = function(...args) {
+    const [url, options] = args;
+    
+    console.log('ChatGPT Please: ALL fetch request to:', url);
+    
+    if (url && options && options.body) {
+        console.log('ChatGPT Please: Request body:', options.body);
         
-        debugLog('Document loaded, initializing...');
-        
-        // Run initial modifications
-        modifyInputElements();
-        monitorMessageSending();
-        interceptSubmissions();
-        handleKeyboardShortcuts();
-        interceptAllInputEvents();
-        observeDOMChanges();
-        
-        // Re-run periodically to catch any missed elements
-        setInterval(() => {
-            modifyInputElements();
-            monitorMessageSending();
-        }, 2000); // Increased interval to 2 seconds
-        
-        debugLog('Extension initialization complete');
+        // Try to modify any request that might contain messages
+        try {
+            const body = JSON.parse(options.body);
+            console.log('ChatGPT Please: Parsed body:', body);
+            
+            if (body.messages && body.messages.length > 0) {
+                const lastMessage = body.messages[body.messages.length - 1];
+                if (lastMessage.content && !lastMessage.content.toLowerCase().endsWith('please')) {
+                    console.log('ChatGPT Please: Intercepting network request');
+                    console.log('Original message:', lastMessage.content);
+                    lastMessage.content = addPlease(lastMessage.content);
+                    options.body = JSON.stringify(body);
+                    console.log('Modified message:', lastMessage.content);
+                }
+            }
+        } catch (e) {
+            console.log('ChatGPT Please: Not JSON request');
+        }
     }
     
-    // Start the extension
-    debugLog('Starting ChatGPT Please extension...');
-    init();
+    return originalFetch.apply(this, args);
+};
+
+// Also intercept XMLHttpRequest
+const originalXHR = window.XMLHttpRequest;
+window.XMLHttpRequest = function() {
+    const xhr = new originalXHR();
+    const originalSend = xhr.send;
+    const originalOpen = xhr.open;
     
-})();
+    xhr.open = function(method, url, ...args) {
+        console.log('ChatGPT Please: XHR OPEN:', method, url);
+        return originalOpen.apply(this, [method, url, ...args]);
+    };
+    
+    xhr.send = function(data) {
+        console.log('ChatGPT Please: XHR SEND:', data);
+        if (data && typeof data === 'string') {
+            try {
+                const body = JSON.parse(data);
+                if (body.messages && body.messages.length > 0) {
+                    const lastMessage = body.messages[body.messages.length - 1];
+                    if (lastMessage.content && !lastMessage.content.toLowerCase().endsWith('please')) {
+                        console.log('ChatGPT Please: Intercepting XHR request');
+                        console.log('Original message:', lastMessage.content);
+                        lastMessage.content = addPlease(lastMessage.content);
+                        data = JSON.stringify(body);
+                        console.log('Modified message:', lastMessage.content);
+                    }
+                }
+            } catch (e) {
+                // Not JSON, ignore
+            }
+        }
+        return originalSend.call(this, data);
+    };
+    
+    return xhr;
+};
+
+// Also try to intercept at the very last moment
+document.addEventListener('beforeunload', function() {
+    console.log('ChatGPT Please: Page unloading, checking for final requests...');
+});
+
+// Monitor for any network activity
+const observer = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+        if (entry.name.includes('chatgpt') || entry.name.includes('openai') || entry.name.includes('backend-api')) {
+            console.log('ChatGPT Please: Network activity detected:', entry.name);
+        }
+    }
+});
+observer.observe({ entryTypes: ['resource'] });
+
+console.log('ChatGPT Please: Ready!');
